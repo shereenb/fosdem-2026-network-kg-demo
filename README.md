@@ -1,99 +1,101 @@
-# Network Knowledge Graph for Lungo
+# FOSDEM 2026: Network Knowledge Graph Demo
 
-**FOSDEM 2026**: Beyond MCP Servers: Why Network Automation Agents Need Knowledge Graphs
+**Beyond MCP Servers: Why Network Automation Agents Need Knowledge Graphs**
 
-Adds network infrastructure knowledge graph capabilities to lungo, demonstrating why graph-based queries outperform text-based approaches for network automation.
+This demo shows two approaches to querying network infrastructure via MCP:
 
-## The Problem
+| | Approach 1 (Bad) | Approach 3 (Good) |
+|--|-----------------|-------------------|
+| **MCP returns** | 8,714 chars raw JSON | 172 chars precise answer |
+| **Who reasons?** | LLM parses all data | Cypher computes the answer |
+| **Result** | Expensive, slow | Efficient, deterministic |
 
-coffeeAGNTCY lungo handles business logic great, but has no infrastructure visibility. When the database times out, the Auction Supervisor can't diagnose why.
+## Files
 
-## The Solution
-
-Model network topology as a knowledge graph. Query with Cypher. Expose via MCP.
-
-## Quick Start
-
-### 1. Setup Neo4j Aura (recommended)
-
-1. Go to https://console.neo4j.io
-2. Create a free AuraDB instance
-3. Copy the connection URI and password
-4. Create `.env`:
-   ```
-   NEO4J_URI=neo4j+s://xxxxx.databases.neo4j.io
-   NEO4J_USER=neo4j
-   NEO4J_PASSWORD=your-aura-password
-   OPENAI_API_KEY=sk-...
-   ```
-
-### 2. Install Dependencies
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+```
+├── mcp_servers/
+│   └── network_kg_service.py      # MCP server with Neo4j/Cypher queries
+├── exchange/graph/
+│   ├── network_tools.py           # MCP client tools (LangChain)
+│   └── graph_with_diagnostics.py  # LangGraph diagnostics node
+├── scripts/
+│   └── seed_neo4j.py              # Seeds Neo4j with network topology
+├── docker/
+│   └── Dockerfile.network-kg      # Dockerfile for MCP server
+└── docker-compose.network-kg.yaml # Neo4j + MCP server
 ```
 
-### 3. Load Graph Data
+## Architecture
 
-```bash
-python setup_network_graph.py
+```
+User Question
+     ↓
+LangGraph (graph_with_diagnostics.py)
+     ↓
+MCP Client (network_tools.py)
+     ↓
+MCP Server (network_kg_service.py)
+     ↓
+Neo4j + Cypher
+     ↓
+Precise Answer (172 chars) or Raw Dump (8,714 chars)
 ```
 
-### 4. Run the Demo
+## Demo Queries
 
-```bash
-./demo_launcher.sh
+**Approach 3** (Cypher computes the answer):
+- "Check the network health"
+- "What's the network path for postgresql_orders?"
+- "What's the blast radius if link-core-agg3 fails?"
+
+**Approach 1** (Raw data dump for comparison):
+- "Use approach 1 to check network health"
+
+## Sample Output
+
+**Approach 3:**
+```
+DEGRADED | 2 of 12 links down: link-core-agg3 (87%), link-agg3-dist3 (91%)
+Critical services: lungo_auction_supervisor, postgresql_orders, slim_gateway
+
+[MCP returned 172 chars — Cypher computed the precise answer]
 ```
 
-Choose:
-- **A**: Terminal demo (Attempt 1 vs Attempt 3)
-- **B**: Web UI at localhost:8001
-- **C**: Check setup / verify Neo4j connection
+**Approach 1:**
+```json
+{
+  "devices": [...13 devices...],
+  "links": [...12 links...],
+  "services": [...7 services...],
+  "connections": [...24 relationships...]
+}
 
-## Demo Options
-
-### Option A: Terminal Demo (`demo_option_a.py`)
-
-Standalone terminal demo showing the presentation narrative:
-- **Attempt 1**: Raw data via MCP (~2,400 tokens)
-- **Attempt 2**: KAG/GraphRAG (covered in slides)
-- **Attempt 3**: Graph-backed MCP (~1,100 tokens)
-
-```bash
-python demo_option_a.py
+[MCP returned 8714 chars — LLM must parse all this raw data]
 ```
 
-### Option B: Web UI (`network_kg_api.py`)
+## Integration
 
-Standalone web UI at http://localhost:8001/diagnostics
-
-```bash
-python network_kg_api.py
-```
-
-Features:
-- Diagnose service issues
-- Analyze blast radius of link failures
-- Trace upstream paths
-
-### Option C: Full coffeeAGNTCY Integration (`option_c/`)
-
-**True integration** into the coffeeAGNTCY lungo UI at localhost:3000.
-
-This modifies lungo to:
-- Add `network_kg_service.py` as an MCP server
-- Add DIAGNOSTICS node to the Auction Supervisor LangGraph
-- Show Network KG in the UI visualization
+These files integrate into [coffeeAGNTCY lungo](https://github.com/agntcy/agentic-apps). To run:
 
 ```bash
-cd option_c
-./install.sh
-```
-
-Then start lungo with:
-```bash
-cd /path/to/lungo
+# From the lungo directory
 docker-compose -f docker-compose.yaml -f docker-compose.network-kg.yaml up -d
+
+# Seed Neo4j
+python scripts/seed_neo4j.py
+
+# Open UI at http://localhost:3000
 ```
+
+## Key Insight
+
+The knowledge graph does the reasoning, not the LLM:
+
+```cypher
+// Approach 3: Cypher returns the answer
+MATCH (s:Service)-[:RUNS_ON]->(host)<-[:CONNECTS_TO*]-(upstream)
+RETURN upstream.name
+→ "postgresql_orders → db-server-1 → dist-switch-2 → core-router-1"
+```
+
+vs dumping all nodes/relationships and asking the LLM to figure it out.
