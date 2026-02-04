@@ -4,7 +4,7 @@
 
 This demo shows two approaches to querying network infrastructure via MCP:
 
-| | Approach 1 (Bad) | Approach 3 (Good) |
+| | Approach 1 (The Problem) | Approach 3 (Solution) |
 |--|-----------------|-------------------|
 | **MCP returns** | 8,714 chars raw JSON | 172 chars precise answer |
 | **Who reasons?** | LLM parses all data | Cypher computes the answer |
